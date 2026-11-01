@@ -39,6 +39,28 @@ const SYMBOLS: SymbolOption[] = [
     { label: "AUD/USD", symbol: "AUDUSDT", name: "Aussie / US Dollar" },
 ];
 
+// Hitung Average True Range (ATR) untuk manajemen risiko SL/TP yang adaptif
+// (perbaikan win rate untuk Gold / Forex major yang volat-nya lebih tinggi)
+const calculateATR = (data: any[], period: number = 14): number => {
+    const trueRanges: number[] = [];
+    for (let i = 1; i < data.length; i++) {
+        const tr = Math.max(
+            data[i].high - data[i].low,
+            Math.abs(data[i].high - data[i - 1].close),
+            Math.abs(data[i].low - data[i - 1].close)
+        );
+        trueRanges.push(tr);
+    }
+    if (trueRanges.length === 0) {
+        const last = data[data.length - 1];
+        return last ? (last.high - last.low) || 0.0001 : 0.0001;
+    }
+    const n = Math.min(period, trueRanges.length);
+    let sum = 0;
+    for (let i = 0; i < n; i++) sum += trueRanges[i];
+    return sum / n;
+};
+
 interface BacktestResult {
     timeframe: string;
     totalTrades: number;
@@ -342,8 +364,9 @@ const CandlestickChart = () => {
         if (cloud) {
           const { upper: kumoUpper, lower: kumoLower } = cloud;
           if (lastSignal.type === "BUY") {
-            const slPrice = kumoLower;
-            const risk = entryPrice - slPrice;
+            const atr = calculateATR(formattedData, 14);
+            const slPrice = entryPrice - atr;
+            const risk = atr;
             if (risk > 0) {
               const lines = [
                 { price: entryPrice, color: "#2962FF", lineWidth: 2, title: "Entry (Buy)" },
@@ -355,8 +378,9 @@ const CandlestickChart = () => {
               lines.forEach((l) => priceLinesRef.current.push(candlestickSeries.createPriceLine(l as any)));
             }
           } else if (lastSignal.type === "SELL") {
-            const slPrice = kumoUpper;
-            const risk = slPrice - entryPrice;
+            const atr = calculateATR(formattedData, 14);
+            const slPrice = entryPrice + atr;
+            const risk = atr;
             if (risk > 0) {
               const lines = [
                 { price: entryPrice, color: "#2962FF", lineWidth: 2, title: "Entry (Sell)" },
@@ -497,7 +521,7 @@ const CandlestickChart = () => {
         const candle = formattedData[j];
 
         if (sig.type === "BUY") {
-          const risk = entryPrice - kumoLower;
+          const risk = calculateATR(formattedData, 14);
           if (risk <= 0) break;
           const tp1 = entryPrice + risk * 1;
           const tp2 = entryPrice + risk * 2;
@@ -530,7 +554,7 @@ const CandlestickChart = () => {
           }
         } else {
           // SELL
-          const risk = kumoUpper - entryPrice;
+          const risk = calculateATR(formattedData, 14);
           if (risk <= 0) break;
           const tp1 = entryPrice - risk * 1;
           const tp2 = entryPrice - risk * 2;
