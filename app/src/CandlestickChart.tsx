@@ -38,6 +38,11 @@ const SYMBOLS: SymbolOption[] = [
     { label: "EUR/USD", symbol: "EURUSDT", name: "Euro / US Dollar" },
     { label: "GBP/USD", symbol: "GBPUSDT", name: "Pound / US Dollar" },
     { label: "AUD/USD", symbol: "AUDUSDT", name: "Aussie / US Dollar" },
+    { label: "US500", symbol: "US500", name: "S&P 500 Index (Deriv)" },
+    { label: "NAS100", symbol: "NAS100", name: "Nasdaq 100 Index (Deriv)" },
+    { label: "GBP/JPY", symbol: "GBP/JPY", name: "Pound / Japanese Yen" },
+    { label: "EUR/JPY", symbol: "EUR/JPY", name: "Euro / Japanese Yen" },
+    { label: "USD/JPY", symbol: "USD/JPY", name: "US Dollar / Japanese Yen" },
 ];
 
 // Hitung Average True Range (ATR) untuk manajemen risiko SL/TP yang adaptif
@@ -86,7 +91,7 @@ const fetchCandles = async (symbol: string, interval: string, limit: number = 20
         "4h": 14400, "1d": 86400, "1w": 604800, "1M": 2592000,
     };
     const seconds = secondsMap[interval] ?? 3600;
-    const isDerivPair = symbol.includes("/") || ["US500", "NASDAQ", "US30", "IXIC"].includes(String(symbol).toUpperCase());
+    const isDerivPair = symbol.includes("/") || ["US500", "NAS100", "US30", "IXIC"].includes(String(symbol).toUpperCase());
     if (isDerivPair) {
         return fetchDerivCandles(String(symbol), seconds);
     }
