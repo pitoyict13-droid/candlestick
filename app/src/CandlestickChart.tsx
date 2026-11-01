@@ -25,29 +25,39 @@ const TIMEFRAMES: TimeframeOption[] = [
     { label: "1M", value: "1M", seconds: 2592000 },
 ];
 
+interface Candle {
+    time: number;
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+}
+
 interface SymbolOption {
     label: string;
     symbol: string;
     name: string;
+    source: "binance" | "yahoo";
 }
 
+// crypto & emas lewat Binance; forex & indeks lewat Yahoo (endpoint Deriv history tidak tersedia)
 const SYMBOLS: SymbolOption[] = [
-    { label: "BTC/USDT", symbol: "BTCUSDT", name: "Bitcoin / USDT" },
-    { label: "ETH/USDT", symbol: "ETHUSDT", name: "Ethereum / USDT" },
-    { label: "XAU/USDT", symbol: "PAXGUSDT", name: "Gold Spot (XAU)" },
-    { label: "EUR/USD", symbol: "EURUSDT", name: "Euro / US Dollar" },
-    { label: "GBP/USD", symbol: "GBPUSDT", name: "Pound / US Dollar" },
-    { label: "AUD/USD", symbol: "AUDUSDT", name: "Aussie / US Dollar" },
-    { label: "US500", symbol: "US500", name: "S&P 500 Index (Deriv)" },
-    { label: "NAS100", symbol: "NAS100", name: "Nasdaq 100 Index (Deriv)" },
-    { label: "GBP/JPY", symbol: "GBP/JPY", name: "Pound / Japanese Yen" },
-    { label: "EUR/JPY", symbol: "EUR/JPY", name: "Euro / Japanese Yen" },
-    { label: "USD/JPY", symbol: "USD/JPY", name: "US Dollar / Japanese Yen" },
+    { label: "BTC/USDT", symbol: "BTCUSDT", name: "Bitcoin / USDT", source: "binance" },
+    { label: "ETH/USDT", symbol: "ETHUSDT", name: "Ethereum / USDT", source: "binance" },
+    { label: "XAU/USDT", symbol: "PAXGUSDT", name: "Gold Spot (XAU)", source: "binance" },
+    { label: "EUR/USD", symbol: "EURUSD=X", name: "Euro / US Dollar", source: "yahoo" },
+    { label: "GBP/USD", symbol: "GBPUSD=X", name: "Pound / US Dollar", source: "yahoo" },
+    { label: "AUD/USD", symbol: "AUDUSD=X", name: "Aussie / US Dollar", source: "yahoo" },
+    { label: "USD/JPY", symbol: "USDJPY=X", name: "US Dollar / Japanese Yen", source: "yahoo" },
+    { label: "EUR/JPY", symbol: "EURJPY=X", name: "Euro / Japanese Yen", source: "yahoo" },
+    { label: "GBP/JPY", symbol: "GBPJPY=X", name: "Pound / Japanese Yen", source: "yahoo" },
+    { label: "US500", symbol: "^GSPC", name: "S&P 500 Index", source: "yahoo" },
+    { label: "NAS100", symbol: "^NDX", name: "Nasdaq 100 Index", source: "yahoo" },
 ];
 
 // Hitung Average True Range (ATR) untuk manajemen risiko SL/TP yang adaptif
 // (perbaikan win rate untuk Gold / Forex major yang volat-nya lebih tinggi)
-const calculateATR = (data: any[], period: number = 14): number => {
+const calculateATR = (data: Candle[], period: number = 14): number => {
     const trueRanges: number[] = [];
     for (let i = 1; i < data.length; i++) {
         const tr = Math.max(
@@ -67,37 +77,94 @@ const calculateATR = (data: any[], period: number = 14): number => {
     return sum / n;
 };
 
-// Fetch candlesticks dari Deriv (untuk pair forex / index yang tidak ada di Binance)
-const fetchDerivCandles = async (symbol: string, granularity: number): Promise<any[]> => {
-    const end = Math.floor(Date.now() / 1000);
-    const start = end - 200 * granularity;
-    const url = `https://api.deriv.com/rest/public/history?symbol=${encodeURIComponent(symbol)}&from=${start}&to=${end}&resolution=${granularity}`;
-    const res = await fetch(url);
-    const json = await res.json();
-    const candles = json?.candles ?? json?.prices ?? [];
-    return candles.map((c: any) => ({
-        time: c.time_start ?? c.t ?? 0,
-        open: c.open ?? c[0]?.o ?? c[1]?.[0] ?? 0,
-        high: c.high ?? c[0]?.h ?? c[1]?.[1] ?? 0,
-        low: c.low ?? c[0]?.l ?? c[1]?.[0] ?? 0,
-        close: c.close ?? c[0]?.c ?? c[1]?.[2] ?? 0,
-    }));
+const secondsOf = (interval: string): number =>
+    TIMEFRAMES.find((t) => t.value === interval)?.seconds ?? 3600;
+
+// data-api.binance.com tidak bisa diakses dari banyak jaringan; vision adalah host publik
+// resmi untuk data historis, dan /api/binance adalah proxy dev (lihat setupProxy.js)
+const BINANCE_ENDPOINTS = ["https://data-api.binance.vision", "/api/binance"];
+
+// nama interval Yahoo berbeda dari Binance, dan 4h tidak tersedia (agregasi dari 1h)
+const YAHOO_INTERVAL: Record<string, string> = {
+    "1m": "1m", "5m": "5m", "15m": "15m", "30m": "30m", "1h": "1h",
+    "4h": "1h", "1d": "1d", "1w": "1wk", "1M": "1mo",
 };
 
-// Ambil candlesticks: Deriv untuk pair forex/index, Binance untuk pair crypto
-const fetchCandles = async (symbol: string, interval: string, limit: number = 200): Promise<any[]> => {
-    const secondsMap: Record<string, number> = {
-        "1m": 60, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600,
-        "4h": 14400, "1d": 86400, "1w": 604800, "1M": 2592000,
-    };
-    const seconds = secondsMap[interval] ?? 3600;
-    const isDerivPair = symbol.includes("/") || ["US500", "NAS100", "US30", "IXIC"].includes(String(symbol).toUpperCase());
-    if (isDerivPair) {
-        return fetchDerivCandles(String(symbol), seconds);
+const fetchBinanceCandles = async (symbol: string, interval: string, limit: number): Promise<Candle[]> => {
+    let lastError: unknown = null;
+    for (const endpoint of BINANCE_ENDPOINTS) {
+        try {
+            const res = await fetch(`${endpoint}/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`);
+            if (!res.ok) throw new Error(`Binance ${res.status}`);
+            const data = await res.json();
+            if (!Array.isArray(data)) throw new Error(String(data?.msg || "Respons Binance bukan daftar candle"));
+            return data.map((d: any) => ({
+                time: Math.floor(d[0] / 1000),
+                open: parseFloat(d[1]),
+                high: parseFloat(d[2]),
+                low: parseFloat(d[3]),
+                close: parseFloat(d[4]),
+            }));
+        } catch (err) {
+            lastError = err;
+        }
     }
-    const res = await fetch(`https://data-api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`);
-    const data = await res.json();
-    return data.map((d: any) => ({ time: d[0] / 1000, open: parseFloat(d[1]), high: parseFloat(d[2]), low: parseFloat(d[3]), close: parseFloat(d[4]) }));
+    throw lastError;
+};
+
+const fetchYahooCandles = async (symbol: string, interval: string, limit: number): Promise<Candle[]> => {
+    const spanSeconds = secondsOf(interval) * limit;
+    const now = Math.floor(Date.now() / 1000);
+    const reqInterval = YAHOO_INTERVAL[interval] ?? "1h";
+    const url = `/api/yahoo/v8/finance/chart/${encodeURIComponent(symbol)}` +
+        `?interval=${reqInterval}&period1=${now - spanSeconds}&period2=${now}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Yahoo ${res.status}`);
+    const json = await res.json();
+    const result = json?.chart?.result?.[0];
+    if (!result) throw new Error(json?.chart?.error?.description || "Yahoo tidak mengembalikan data");
+    const stamps: number[] = result.timestamp ?? [];
+    const quote = result.indicators?.quote?.[0] ?? {};
+    const candles: Candle[] = [];
+    for (let i = 0; i < stamps.length; i++) {
+        const open = quote.open?.[i], high = quote.high?.[i], low = quote.low?.[i], close = quote.close?.[i];
+        // bar terakhir sering null saat pasar sedang tutup
+        if (!stamps[i] || open == null || high == null || low == null || close == null) continue;
+        candles.push({ time: stamps[i], open, high, low, close });
+    }
+    return aggregateCandles(candles, secondsOf(interval));
+};
+
+const aggregateCandles = (candles: Candle[], bucketSeconds: number): Candle[] => {
+    const buckets = new Map<number, Candle>();
+    for (const c of candles) {
+        const key = Math.floor(c.time / bucketSeconds) * bucketSeconds;
+        const prev = buckets.get(key);
+        if (!prev) {
+            buckets.set(key, { ...c, time: key });
+        } else {
+            prev.high = Math.max(prev.high, c.high);
+            prev.low = Math.min(prev.low, c.low);
+            prev.close = c.close;
+        }
+    }
+    return [...buckets.values()];
+};
+
+// lightweight-charts menolak data yang duplikat atau tidak urut waktu
+const normalizeCandles = (candles: Candle[]): Candle[] => {
+    const byTime = new Map<number, Candle>();
+    for (const c of candles) {
+        if ([c.open, c.high, c.low, c.close].every(Number.isFinite)) byTime.set(c.time, c);
+    }
+    return [...byTime.values()].sort((a, b) => a.time - b.time);
+};
+
+const fetchCandles = async (sym: SymbolOption, interval: string, limit: number = 200): Promise<Candle[]> => {
+    const raw = sym.source === "yahoo"
+        ? await fetchYahooCandles(sym.symbol, interval, limit)
+        : await fetchBinanceCandles(sym.symbol, interval, limit);
+    return normalizeCandles(raw).slice(-limit);
 };
 
 interface BacktestResult {
@@ -123,6 +190,8 @@ const CandlestickChart = () => {
   const senkaARef = useRef<any>(null);
   const senkaBRef = useRef<any>(null);
   const priceLinesRef = useRef<IPriceLine[]>([]);
+  const fittedBandRef = useRef<{ min: number; max: number } | null>(null);
+  const lastPayloadRef = useRef<string>("");
   const renderRef = useRef<any>(null);
   
   const [timeframe, setTimeframe] = useState<typeof TIMEFRAMES[number]>(TIMEFRAMES[5]); // default 4h
@@ -130,8 +199,9 @@ const CandlestickChart = () => {
   useEffect(() => { timeframeValueRef.current = timeframe.value; }, [timeframe.value]);
 
   const [selectedSymbol, setSelectedSymbol] = useState<SymbolOption>(SYMBOLS[0]); // default BTC/USDT
-  const symbolRef = useRef<string>(SYMBOLS[0].symbol);
-  useEffect(() => { symbolRef.current = selectedSymbol.symbol; }, [selectedSymbol.symbol]);
+
+  const [chartError, setChartError] = useState<string | null>(null);
+  const [lastSync, setLastSync] = useState<number | null>(null);
 
   // --- Timer candle (countdown sampai candle berikutnya mulai/berakhir) ---
   const [timeLeft, setTimeLeft] = useState(timeframe.seconds);
@@ -268,18 +338,32 @@ const CandlestickChart = () => {
   }, []);
 
   // ==================== RENDER CHART ====================
-  const renderData = useCallback((formattedData: any[]) => {
-    const candlestickSeries = seriesRef.current!;
+  const renderData = useCallback((formattedData: Candle[], fit: boolean) => {
+    const chart = chartRef.current;
+    const candlestickSeries = seriesRef.current;
     const emaSeries = emaRef.current!;
     const tenkanSeries = tenkanRef.current!;
     const kijunSeries = kijunRef.current!;
     const senkouASeries = senkaARef.current!;
     const senkouBSeries = senkaBRef.current!;
-    const chart = chartRef.current!;
 
-    const seconds = timeframeValueRef.current ? TIMEFRAMES.find((t) => t.value === timeframeValueRef.current)?.seconds || 14400 : 14400;
+    // chart sudah dibuang (unmount / StrictMode remount) atau data tidak tersedia
+    if (!chart || !candlestickSeries || formattedData.length === 0) return;
 
-    candlestickSeries.setData(formattedData);
+    const seconds = secondsOf(timeframeValueRef.current ?? "4h");
+
+    const dataMin = Math.min(...formattedData.map((d) => d.low));
+    const dataMax = Math.max(...formattedData.map((d) => d.high));
+    const band = fittedBandRef.current;
+    // auto-scale mati saat refresh biasa; dinyalakan lagi kalau pair/timeframe berganti atau
+    // harga keluar dari area yang terkunci, supaya candle tidak hilang dari layar
+    const rescalePrice = fit || !band || dataMin < band.min || dataMax > band.max;
+    candlestickSeries.priceScale().applyOptions({ autoScale: rescalePrice });
+
+    // setData menggeser rentang waktu yang tampak; simpan agar refresh berkala tidak merusak zoom
+    const visibleRange = fit ? null : chart.timeScale().getVisibleLogicalRange();
+
+    candlestickSeries.setData(formattedData as any);
 
     // EMA 20
     const emaPeriod = 20;
@@ -434,7 +518,12 @@ const CandlestickChart = () => {
       }
     }
 
-    chart.timeScale().fitContent();
+    if (fit) {
+      chart.timeScale().fitContent();
+    } else if (visibleRange) {
+      chart.timeScale().setVisibleLogicalRange(visibleRange);
+    }
+    if (rescalePrice) fittedBandRef.current = { min: dataMin, max: dataMax };
   }, []);
 
   renderRef.current = renderData;
@@ -470,67 +559,64 @@ const CandlestickChart = () => {
     senkaARef.current = senkouASeries;
     senkaBRef.current = senkouBSeries;
 
-    const fetchData = async () => {
-      try {
-        const data = await fetchCandles(symbolRef.current, timeframeValueRef.current);
-        const formattedData = data.map((d: any) => ({
-          time: d.time,
-          open: d.open,
-          high: d.high,
-          low: d.low,
-          close: d.close,
-        }));
-        renderRef.current(formattedData);
-      } catch (err) {
-        console.error("Gagal mengambil data:", err);
-      }
-    };
-
-    fetchData();
-    const fetchInterval = setInterval(fetchData, 5000);
-
     const handleResize = () => {
       chart.applyOptions({ width: chartContainerRef.current?.clientWidth });
     };
     window.addEventListener("resize", handleResize);
 
     return () => {
-      clearInterval(fetchInterval);
       window.removeEventListener("resize", handleResize);
+      chartRef.current = null;
+      seriesRef.current = null;
+      priceLinesRef.current = [];
       chart.remove();
     };
   }, []);
 
-  // ==================== REFETCH SAAT TIMEFRAME UBAH ====================
+  // ==================== MUAT DATA (awal + saat pair/timeframe ganti) ====================
   useEffect(() => {
-    const fetchData = async () => {
+    let cancelled = false;
+    // Yahoo membatasi request yang terlalu sering
+    const pollEvery = selectedSymbol.source === "yahoo" ? 30000 : 5000;
+
+    const load = async (fit: boolean) => {
+      if (cancelled) return;
       try {
-        const data = await fetchCandles(symbolRef.current, timeframeValueRef.current);
-        const formattedData = data.map((d: any) => ({
-          time: d.time,
-          open: d.open,
-          high: d.high,
-          low: d.low,
-          close: d.close,
-        }));
-        renderRef.current(formattedData);
-      } catch (err) {
-        console.error("Gagal mengambil data:", err);
+        const data = await fetchCandles(selectedSymbol, timeframe.value);
+        if (cancelled) return;
+        if (data.length === 0) {
+          setChartError(`${selectedSymbol.label} ${timeframe.label}: sumber data tidak mengirim candle.`);
+          return;
+        }
+        setChartError(null);
+        setLastSync(Date.now());
+        // pasar sedang sepi: candle identik dengan yang sudah digambar, lewati render ulang
+        const last = data[data.length - 1];
+        const payload = `${data.length}|${last.time}|${last.close}`;
+        if (!fit && payload === lastPayloadRef.current) return;
+        lastPayloadRef.current = payload;
+        renderRef.current(data, fit);
+      } catch (err: any) {
+        if (!cancelled) {
+          setChartError(`Gagal mengambil data ${selectedSymbol.label} (${timeframe.label}): ${err?.message || err}`);
+        }
       }
     };
-    fetchData();
-  }, [timeframe, selectedSymbol]);
+
+    load(true);
+    const fetchInterval = setInterval(() => load(false), pollEvery);
+    return () => {
+      cancelled = true;
+      clearInterval(fetchInterval);
+    };
+  }, [selectedSymbol, timeframe]);
 
   // ==================== BACKTEST ====================
-  const runBacktestForTimeframe = async (tf: TimeframeOption, sym: string): Promise<BacktestResult> => {
-    const data = await fetchCandles(sym, tf.value, 500);
-    const formattedData = data.map((d: any) => ({
-      time: d.time,
-      open: d.open,
-      high: d.high,
-      low: d.low,
-      close: d.close,
-    }));
+  const runBacktestForTimeframe = async (tf: TimeframeOption, sym: SymbolOption): Promise<BacktestResult> => {
+    const formattedData = await fetchCandles(sym, tf.value, 500);
+    if (formattedData.length < 60) {
+      throw new Error(`${sym.label} ${tf.label}: data terlalu sedikit (${formattedData.length} candle)`);
+    }
 
     const { getCloudAt, signals } = calculateIndicators(formattedData, tf.seconds);
 
@@ -659,17 +745,18 @@ const CandlestickChart = () => {
     setIsBacktesting(true);
     setBacktestError(null);
     const results: BacktestResult[] = [];
+    const failures: string[] = [];
     for (const tf of TIMEFRAMES) {
       try {
-        const r = await runBacktestForTimeframe(tf, selectedSymbol.symbol);
-        results.push(r);
-        setBacktestResults(results);
+        results.push(await runBacktestForTimeframe(tf, selectedSymbol));
       } catch (err: any) {
-        console.error(`Backtest ${tf.label} failed:`, err);
+        failures.push(tf.label);
         results.push({ timeframe: tf.label, totalTrades: 0, wins: 0, losses: 0, winrate: 0, totalR: 0, profitFactor: 0, avgWinR: 0, avgLossR: 0, expectancy: 0 });
-        setBacktestResults(results);
       }
+      // array baru, supaya React memicu render ulang tiap baris selesai
+      setBacktestResults([...results]);
     }
+    if (failures.length) setBacktestError(`Backtest gagal di: ${failures.join(", ")}`);
     setIsBacktesting(false);
   };
 
@@ -811,7 +898,17 @@ const CandlestickChart = () => {
         )}
       </div>
 
-      <div ref={chartContainerRef} />
+      {chartError && (
+        <div style={{ border: "1px solid #ef5350", background: "#fff1f0", color: "#c62828", borderRadius: "6px", padding: "10px 14px", marginBottom: "12px", fontSize: "13px" }}>
+          {chartError}
+        </div>
+      )}
+      {!chartError && lastSync && (
+        <div style={{ fontSize: "12px", color: "#888", marginBottom: "8px" }}>
+          sinkron terakhir {new Date(lastSync).toLocaleTimeString()} · {selectedSymbol.name} · {selectedSymbol.source === "yahoo" ? "Yahoo Finance" : "Binance"}
+        </div>
+      )}
+      <div ref={chartContainerRef} style={{ width: "100%" }} />
     </div>
   );
 };
