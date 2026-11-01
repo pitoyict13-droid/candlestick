@@ -1,0 +1,86 @@
+{
+  "name": "candlestick-app-chart",
+  "version": "0.0.1",
+  "description": "web application to visualize historical price movements of the BTC/USDT trading pair",
+  "main": "dist/cjs/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/types.d.ts",
+  "scripts": {
+    "start": "node_modules/.bin/react-scripts start",
+    "build": "node_modules/.bin/react-scripts build",
+    "test": "node_modules/.bin/react-scripts test",
+    "eject": "node_modules/.bin/react-scripts eject",
+    "build:npm": "npm run build:cleanup && npm run build:rollup",
+    "build:rollup": "node_modules/.bin/rollup -c --bundleConfigAsCjs",
+    "build:cleanup": "rm -drf ./dist"
+  },
+  "dependencies": {
+    "axios": "^1.6.8",
+    "chart.js": "^4.4.2",
+    "chartjs-adapter-date-fns": "^3.0.0",
+    "chartjs-plugin-annotation": "^3.0.1",
+    "date-fns": "^3.6.0",
+    "react": "^18.2.0",
+    "react-chartjs-2": "^5.2.0",
+    "react-dom": "^18.2.0",
+    "react-scripts": "5.0.1"
+  },
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "^25.0.7",
+    "@rollup/plugin-image": "^3.0.3",
+    "@rollup/plugin-json": "^6.1.0",
+    "@rollup/plugin-node-resolve": "^15.2.3",
+    "@rollup/plugin-terser": "^0.4.4",
+    "@rollup/plugin-typescript": "^11.1.6",
+    "@testing-library/jest-dom": "^5.17.0",
+    "@testing-library/react": "^13.4.0",
+    "@testing-library/user-event": "^13.5.0",
+    "@types/jest": "^27.5.2",
+    "@types/mime": "^3.0.4",
+    "@types/node": "^16.18.93",
+    "@types/react": "^18.2.73",
+    "@types/react-dom": "^18.2.23",
+    "react-scripts": "5.0.1",
+    "rollup": "^4.13.2",
+    "rollup-plugin-dts": "^6.1.0",
+    "rollup-plugin-peer-deps-external": "^2.2.4",
+    "rollup-plugin-postcss": "^4.0.2",
+    "typescript": "^4.9.5"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app",
+      "react-app/jest"
+    ],
+    "rules": {
+      "quotes": [
+        "warn",
+        "double"
+      ]
+    }
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "keywords": [
+    "react",
+    "component",
+    "npm",
+    "chart",
+    "candlestick"
+  ],
+  "author": "Diana",
+  "license": "ISC",
+  "files": [
+    "dist"
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "name": "candlestick-chart-app",
+  "version": "0.2.8",
+  "description": "web application to visualize historical price movements of the BTC/USDT trading pair",
+  "scripts": {
+    "start": "node_modules/.bin/react-scripts start",
+    "build": "node_modules/.bin/react-scripts build",
+    "test": "node_modules/.bin/react-scripts test",
+    "eject": "node_modules/.bin/react-scripts eject"
+  },
+  "dependencies": {
+    "candlestick-app-chart": "^0.0.1",
+    "http-proxy-middleware": "^4.2.0",
+    "lightweight-charts": "4.1.3",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-scripts": "5.0.1",
+    "web-vitals": "^2.1.0"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^5.17.0",
+    "@testing-library/react": "^13.4.0",
+    "@testing-library/user-event": "^13.5.0",
+    "@types/jest": "^27.5.2",
+    "@types/node": "^16.18.93",
+    "@types/react": "^18.2.73",
+    "@types/react-dom": "^18.2.23",
+    "react-scripts": "5.0.1",
+    "typescript": "^4.9.5"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app",
+      "react-app/jest"
+    ],
+    "rules": {
+      "quotes": [
+        "warn",
+        "double"
+      ]
+    }
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
+}
