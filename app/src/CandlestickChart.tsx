@@ -396,7 +396,6 @@ const CandlestickChart = () => {
         const entryPrice = lastSignal.price;
         const cloud = getCloudAt(signalIndex);
         if (cloud) {
-          const { upper: kumoUpper, lower: kumoLower } = cloud;
           if (lastSignal.type === "BUY") {
             const atr = calculateATR(formattedData, 14);
             const slPrice = entryPrice - atr;
