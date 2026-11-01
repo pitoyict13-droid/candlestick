@@ -72,6 +72,29 @@ const CandlestickChart = () => {
   const symbolRef = useRef<string>(SYMBOLS[0].symbol);
   useEffect(() => { symbolRef.current = selectedSymbol.symbol; }, [selectedSymbol.symbol]);
 
+  // --- Timer candle (countdown sampai candle berikutnya mulai/berakhir) ---
+  const [timeLeft, setTimeLeft] = useState(timeframe.seconds);
+  useEffect(() => {
+    const updateTimer = () => {
+      const now = Date.now();
+      const seconds = timeframe.seconds - (Math.floor(now / 1000) % timeframe.seconds);
+      setTimeLeft(seconds);
+    };
+    updateTimer();
+    const timerInterval = setInterval(updateTimer, 1000);
+    return () => clearInterval(timerInterval);
+  }, [timeframe]);
+
+  const formatCountdown = (totalSeconds: number) => {
+    const s = Math.max(0, Math.floor(totalSeconds));
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    const mm = String(m).padStart(2, "0");
+    const ss = String(sec).padStart(2, "0");
+    return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+  };
+
   // --- Backtest state ---
   const [backtestResults, setBacktestResults] = useState<BacktestResult[]>([]);
   const [isBacktesting, setIsBacktesting] = useState(false);
@@ -607,6 +630,9 @@ const CandlestickChart = () => {
           </h2>
           <span style={{ background: "#333", color: "#fff", padding: "4px 10px", borderRadius: "12px", fontSize: "14px", fontWeight: "bold", fontFamily: "monospace" }}>
             {timeframe.value.toUpperCase()}
+          </span>
+          <span style={{ background: "#f0f3fa", color: "#333", padding: "4px 10px", borderRadius: "12px", fontSize: "13px", fontWeight: "bold", fontFamily: "monospace" }}>
+            ⏱ {formatCountdown(timeLeft)}
           </span>
         </div>
 
