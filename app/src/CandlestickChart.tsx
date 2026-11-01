@@ -387,7 +387,7 @@ const CandlestickChart = () => {
 
     const fetchData = async () => {
       try {
-        const res = await fetch(`/api/binance/api/v3/klines?symbol=${symbolRef.current}&interval=${timeframeValueRef.current}&limit=200`);
+        const res = await fetch(`https://data-api.binance.vision/api/v3/klines?symbol=${symbolRef.current}&interval=${timeframeValueRef.current}&limit=200`);
         const data = await res.json();
         const formattedData = data.map((d: any) => ({
           time: d[0] / 1000,
@@ -421,7 +421,7 @@ const CandlestickChart = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const res = await fetch(`/api/binance/api/v3/klines?symbol=${symbolRef.current}&interval=${timeframeValueRef.current}&limit=200`);
+        const res = await fetch(`https://data-api.binance.vision/api/v3/klines?symbol=${symbolRef.current}&interval=${timeframeValueRef.current}&limit=200`);
         const data = await res.json();
         const formattedData = data.map((d: any) => ({
           time: d[0] / 1000,
@@ -440,7 +440,7 @@ const CandlestickChart = () => {
 
   // ==================== BACKTEST ====================
   const runBacktestForTimeframe = async (tf: TimeframeOption, sym: string): Promise<BacktestResult> => {
-    const res = await fetch(`/api/binance/api/v3/klines?symbol=${sym}&interval=${tf.value}&limit=500`);
+    const res = await fetch(`https://data-api.binance.vision/api/v3/klines?symbol=${sym}&interval=${tf.value}&limit=500`);
     const data = await res.json();
     const formattedData = data.map((d: any) => ({
       time: d[0] / 1000,
