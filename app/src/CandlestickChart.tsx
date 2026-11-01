@@ -33,6 +33,7 @@ interface SymbolOption {
 
 const SYMBOLS: SymbolOption[] = [
     { label: "BTC/USDT", symbol: "BTCUSDT", name: "Bitcoin / USDT" },
+    { label: "ETH/USDT", symbol: "ETHUSDT", name: "Ethereum / USDT" },
     { label: "XAU/USDT", symbol: "PAXGUSDT", name: "Gold Spot (XAU)" },
     { label: "EUR/USD", symbol: "EURUSDT", name: "Euro / US Dollar" },
     { label: "GBP/USD", symbol: "GBPUSDT", name: "Pound / US Dollar" },
@@ -59,6 +60,39 @@ const calculateATR = (data: any[], period: number = 14): number => {
     let sum = 0;
     for (let i = 0; i < n; i++) sum += trueRanges[i];
     return sum / n;
+};
+
+// Fetch candlesticks dari Deriv (untuk pair forex / index yang tidak ada di Binance)
+const fetchDerivCandles = async (symbol: string, granularity: number): Promise<any[]> => {
+    const end = Math.floor(Date.now() / 1000);
+    const start = end - 200 * granularity;
+    const url = `https://api.deriv.com/rest/public/history?symbol=${encodeURIComponent(symbol)}&from=${start}&to=${end}&resolution=${granularity}`;
+    const res = await fetch(url);
+    const json = await res.json();
+    const candles = json?.candles ?? json?.prices ?? [];
+    return candles.map((c: any) => ({
+        time: c.time_start ?? c.t ?? 0,
+        open: c.open ?? c[0]?.o ?? c[1]?.[0] ?? 0,
+        high: c.high ?? c[0]?.h ?? c[1]?.[1] ?? 0,
+        low: c.low ?? c[0]?.l ?? c[1]?.[0] ?? 0,
+        close: c.close ?? c[0]?.c ?? c[1]?.[2] ?? 0,
+    }));
+};
+
+// Ambil candlesticks: Deriv untuk pair forex/index, Binance untuk pair crypto
+const fetchCandles = async (symbol: string, interval: string, limit: number = 200): Promise<any[]> => {
+    const secondsMap: Record<string, number> = {
+        "1m": 60, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600,
+        "4h": 14400, "1d": 86400, "1w": 604800, "1M": 2592000,
+    };
+    const seconds = secondsMap[interval] ?? 3600;
+    const isDerivPair = symbol.includes("/") || ["US500", "NASDAQ", "US30", "IXIC"].includes(String(symbol).toUpperCase());
+    if (isDerivPair) {
+        return fetchDerivCandles(String(symbol), seconds);
+    }
+    const res = await fetch(`https://data-api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`);
+    const data = await res.json();
+    return data.map((d: any) => ({ time: d[0] / 1000, open: parseFloat(d[1]), high: parseFloat(d[2]), low: parseFloat(d[3]), close: parseFloat(d[4]) }));
 };
 
 interface BacktestResult {
@@ -434,14 +468,13 @@ const CandlestickChart = () => {
 
     const fetchData = async () => {
       try {
-        const res = await fetch(`https://data-api.binance.vision/api/v3/klines?symbol=${symbolRef.current}&interval=${timeframeValueRef.current}&limit=200`);
-        const data = await res.json();
+        const data = await fetchCandles(symbolRef.current, timeframeValueRef.current);
         const formattedData = data.map((d: any) => ({
-          time: d[0] / 1000,
-          open: parseFloat(d[1]),
-          high: parseFloat(d[2]),
-          low: parseFloat(d[3]),
-          close: parseFloat(d[4]),
+          time: d.time,
+          open: d.open,
+          high: d.high,
+          low: d.low,
+          close: d.close,
         }));
         renderRef.current(formattedData);
       } catch (err) {
@@ -468,14 +501,13 @@ const CandlestickChart = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const res = await fetch(`https://data-api.binance.vision/api/v3/klines?symbol=${symbolRef.current}&interval=${timeframeValueRef.current}&limit=200`);
-        const data = await res.json();
+        const data = await fetchCandles(symbolRef.current, timeframeValueRef.current);
         const formattedData = data.map((d: any) => ({
-          time: d[0] / 1000,
-          open: parseFloat(d[1]),
-          high: parseFloat(d[2]),
-          low: parseFloat(d[3]),
-          close: parseFloat(d[4]),
+          time: d.time,
+          open: d.open,
+          high: d.high,
+          low: d.low,
+          close: d.close,
         }));
         renderRef.current(formattedData);
       } catch (err) {
@@ -487,14 +519,13 @@ const CandlestickChart = () => {
 
   // ==================== BACKTEST ====================
   const runBacktestForTimeframe = async (tf: TimeframeOption, sym: string): Promise<BacktestResult> => {
-    const res = await fetch(`https://data-api.binance.vision/api/v3/klines?symbol=${sym}&interval=${tf.value}&limit=500`);
-    const data = await res.json();
+    const data = await fetchCandles(sym, tf.value, 500);
     const formattedData = data.map((d: any) => ({
-      time: d[0] / 1000,
-      open: parseFloat(d[1]),
-      high: parseFloat(d[2]),
-      low: parseFloat(d[3]),
-      close: parseFloat(d[4]),
+      time: d.time,
+      open: d.open,
+      high: d.high,
+      low: d.low,
+      close: d.close,
     }));
 
     const { getCloudAt, signals } = calculateIndicators(formattedData, tf.seconds);
